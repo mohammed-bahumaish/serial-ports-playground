@@ -310,6 +310,7 @@ async function connectToPort(): Promise<void> {
           const children = hl7.getSegments();
           for (let i = 0; i < children.length; i++) {
             console.log(children[i].value.toString());
+            term.writeln(children[i].value.toString());
           }
         }
         if (done) {
