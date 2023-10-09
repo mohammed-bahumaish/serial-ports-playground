@@ -21,6 +21,9 @@ import 'xterm/css/xterm.css';
 import {
   serial as polyfill, SerialPort as SerialPortPolyfill,
 } from 'web-serial-polyfill';
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+import {HL7} from 'hl7-standard';
 
 /**
  * Elements of the port selection dropdown extend HTMLOptionElement so that
@@ -303,9 +306,11 @@ async function connectToPort(): Promise<void> {
         })();
 
         if (value) {
-          await new Promise<void>((resolve) => {
-            term.write(value, resolve);
-          });
+          const hl7 = new HL7(value);
+          const children = hl7.getSegments();
+          for (let i = 0; i < children.length; i++) {
+            console.log(children[i].value.toString());
+          }
         }
         if (done) {
           break;
