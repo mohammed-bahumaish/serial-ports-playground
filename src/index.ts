@@ -1,3 +1,4 @@
+/* eslint-disable max-len */
 /**
  * Copyright 2019 Google LLC
  *
@@ -23,7 +24,7 @@ import {
 } from 'web-serial-polyfill';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
-import {HL7} from 'hl7-standard';
+import HL7 from 'hl7-standard';
 
 /**
  * Elements of the port selection dropdown extend HTMLOptionElement so that
@@ -65,6 +66,14 @@ term.loadAddon(new WebLinksAddon());
 const encoder = new TextEncoder();
 let toFlush = '';
 term.onData((data) => {
+  console.log({
+    'flushOnEnterCheckbox.checked': flushOnEnterCheckbox.checked,
+    'echoCheckbox.checked': echoCheckbox.checked,
+    'port?.writable': port?.writable,
+    data,
+  });
+
+
   if (echoCheckbox.checked) {
     term.write(data);
   }
@@ -76,12 +85,14 @@ term.onData((data) => {
 
   const writer = port.writable.getWriter();
 
+
   if (flushOnEnterCheckbox.checked) {
     toFlush += data;
     if (data === '\r') {
       writer.write(encoder.encode(toFlush));
       writer.releaseLock();
       toFlush = '';
+      console.log({toFlush});
     }
   } else {
     writer.write(encoder.encode(data));
@@ -98,7 +109,7 @@ term.onData((data) => {
  * @return {PortOption}
  */
 function findPortOption(port: SerialPort | SerialPortPolyfill):
-    PortOption | null {
+  PortOption | null {
   for (let i = 0; i < portSelector.options.length; ++i) {
     const option = portSelector.options[i];
     if (option.value === 'prompt') {
@@ -246,7 +257,7 @@ async function connectToPort(): Promise<void> {
     parity: paritySelector.value as ParityType,
     stopBits: Number.parseInt(stopBitsSelector.value),
     flowControl:
-        flowControlCheckbox.checked ? <const> 'hardware' : <const> 'none',
+      flowControlCheckbox.checked ? <const>'hardware' : <const>'none',
     bufferSize,
 
     // Prior to Chrome 86 these names were used.
@@ -272,6 +283,29 @@ async function connectToPort(): Promise<void> {
     term.writeln('<CONNECTED>');
     connectButton.textContent = 'Disconnect';
     connectButton.disabled = false;
+    // const encoder = new TextEncoder();
+    // const writer = port.writable?.getWriter();
+    // const messageToBeSent =`MSH|^~&|MegaReg|XYZHospC|SuperOE|XYZImgCtr|20060529090131-0500||ADT^A01^ADT_A01|01052901|P|2.5
+    // EVN||200605290901||||200605290900
+    // PID|||56782445^^^UAReg^PI||KLEINSAMPLE^BARRY^Q^JR||19620910|M||2028-9^^HL70005^RA99113^^XYZ|260 GOODWIN CREST DRIVE^^BIRMINGHAM^AL^35209^^M~NICKELL'S PICKLES^10000 W 100TH AVE^BIRMINGHAM^AL^35200^^O|||||||0105I30001^^^99DEF^AN
+    // PV1||I|W^389^1^UABH^^^^3||||12345^MORGAN^REX^J^^^MD^0010^UAMC^L||67890^GRAINGER^LUCY^X^^^MD^0010^UAMC^L|MED|||||A0||13579^POTTER^SHERMAN^T^^^MD^0010^UAMC^L|||||||||||||||||||||||||||200605290900
+    // OBX|1|NM|^Body Height||1.80|m^Meter^ISO+|||||F
+    // OBX|2|NM|^Body Weight||79|kg^Kilogram^ISO+|||||F
+    // AL1|1||^ASPIRIN
+    // DG1|1||786.50^CHEST PAIN, UNSPECIFIED^I9|||A
+    // <EOF>`;
+
+    // const dataToBeSent =messageToBeSent.split('\n');
+
+    // console.log({input: JSON.stringify(messageToBeSent)});
+
+    // for (let index = 0; index < dataToBeSent.length; index++) {
+    //   console.log('ping ' + index + ' ' + dataToBeSent[index]);
+    //   await writer?.write(encoder.encode(dataToBeSent[index]));
+    //   await new Promise((r) => {
+    //     setTimeout(r, 1000);
+    //   });
+    // }
   } catch (e) {
     console.error(e);
     if (e instanceof Error) {
@@ -290,14 +324,15 @@ async function connectToPort(): Promise<void> {
       }
 
       let buffer = null;
-      for (;;) {
+      const messages:string[] = [];
+      for (; ;) {
         const {value, done} = await (async () => {
           if (reader instanceof ReadableStreamBYOBReader) {
             if (!buffer) {
               buffer = new ArrayBuffer(bufferSize);
             }
             const {value, done} =
-                await reader.read(new Uint8Array(buffer, 0, bufferSize));
+              await reader.read(new Uint8Array(buffer, 0, bufferSize));
             buffer = value?.buffer;
             return {value, done};
           } else {
@@ -306,16 +341,32 @@ async function connectToPort(): Promise<void> {
         })();
 
         if (value) {
-          const hl7 = new HL7(value);
-          const children = hl7.getSegments();
-          for (let i = 0; i < children.length; i++) {
-            console.log(children[i].value.toString());
-            term.writeln(children[i].value.toString());
-          }
+          const decoder = new TextDecoder('utf-8');
+          const str = decoder.decode(value);
+          console.log({str, done});
+
+          await new Promise<void>((resolve) => {
+            term.writeln(str, resolve);
+          });
+
+          if (str.includes('EOF')) {
+            console.log('receiving message is done');
+            messages.push(str.replace('<EOF>', ''));
+            break;
+          } else messages.push(str);
         }
         if (done) {
+          console.log('receiving message is done');
           break;
         }
+      }
+      console.log( JSON.stringify({'joined message: ': messages.join('\n'), messages}));
+
+      const hl7 = new HL7(messages.join('\n'));
+      hl7.transform();
+      const children = hl7.getSegments();
+      for (let i = 0; i < children.length; i++) {
+        console.log(children[i]);
       }
     } catch (e) {
       console.error(e);
@@ -412,19 +463,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   customBaudRateInput =
-      document.getElementById('custom_baudrate') as HTMLInputElement;
+    document.getElementById('custom_baudrate') as HTMLInputElement;
   dataBitsSelector = document.getElementById('databits') as HTMLSelectElement;
   paritySelector = document.getElementById('parity') as HTMLSelectElement;
   stopBitsSelector = document.getElementById('stopbits') as HTMLSelectElement;
   flowControlCheckbox = document.getElementById('rtscts') as HTMLInputElement;
   echoCheckbox = document.getElementById('echo') as HTMLInputElement;
   flushOnEnterCheckbox =
-      document.getElementById('enter_flush') as HTMLInputElement;
+    document.getElementById('enter_flush') as HTMLInputElement;
   autoconnectCheckbox =
-      document.getElementById('autoconnect') as HTMLInputElement;
+    document.getElementById('autoconnect') as HTMLInputElement;
 
   const convertEolCheckbox =
-      document.getElementById('convert_eol') as HTMLInputElement;
+    document.getElementById('convert_eol') as HTMLInputElement;
   const convertEolCheckboxHandler = () => {
     term.options.convertEol = convertEolCheckbox.checked;
   };
@@ -432,7 +483,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   convertEolCheckboxHandler();
 
   const polyfillSwitcher =
-      document.getElementById('polyfill_switcher') as HTMLAnchorElement;
+    document.getElementById('polyfill_switcher') as HTMLAnchorElement;
   if (usePolyfill) {
     polyfillSwitcher.href = './';
     polyfillSwitcher.textContent = 'Switch to native API';
@@ -463,3 +514,4 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 });
+
